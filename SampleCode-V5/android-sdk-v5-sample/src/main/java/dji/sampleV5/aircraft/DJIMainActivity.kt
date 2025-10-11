@@ -3,25 +3,33 @@ package dji.sampleV5.aircraft
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.activityViewModels
 import dji.sampleV5.aircraft.databinding.ActivityMainBinding
 import dji.sampleV5.aircraft.models.BaseMainActivityVm
+import dji.sampleV5.aircraft.models.BasicAircraftControlVM
 import dji.sampleV5.aircraft.models.MSDKInfoVm
 import dji.sampleV5.aircraft.models.MSDKManagerVM
+import dji.sampleV5.aircraft.models.VirtualStickVM
 import dji.sampleV5.aircraft.models.globalViewModels
 import dji.sampleV5.aircraft.util.Helper
 import dji.sampleV5.aircraft.util.ToastUtils
+import dji.sampleV5.aircraft.virtualstick.JoystickBCIController
+import dji.v5.manager.SDKManager
 import dji.v5.utils.common.LogUtils
 import dji.v5.utils.common.PermissionUtil
 import dji.v5.utils.common.StringUtils
 import io.reactivex.rxjava3.disposables.CompositeDisposable
+import kotlin.getValue
 
 /**
  * Class Description
@@ -31,9 +39,20 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable
  *
  * Copyright (c) 2022, DJI All Rights Reserved.
  */
-abstract class DJIMainActivity : AppCompatActivity() {
+abstract class DJIMainActivity : AppCompatActivity(), JoystickBCIController.BCIStatusListener {
 
     val tag: String = LogUtils.getTag(this)
+
+    private var bciServer: BCIHttpServer? = null
+
+    private var uriTextView: TextView? = null
+
+    private val BCI_SERVER_PORT = 8080
+
+    private lateinit var bciStatusTextView: TextView
+    private lateinit var joystickController: JoystickBCIController
+
+
     private val permissionArray = arrayListOf(
         Manifest.permission.RECORD_AUDIO,
         Manifest.permission.KILL_BACKGROUND_PROCESSES,
@@ -61,6 +80,7 @@ abstract class DJIMainActivity : AppCompatActivity() {
     private val handler: Handler = Handler(Looper.getMainLooper())
     private val disposable = CompositeDisposable()
 
+
     abstract fun prepareUxActivity()
 
     abstract fun prepareTestingToolsActivity()
@@ -87,6 +107,77 @@ abstract class DJIMainActivity : AppCompatActivity() {
         initMSDKInfoView()
         observeSDKManager()
         checkPermissionAndRequest()
+        bciStatusTextView = findViewById(R.id.bciStatusTextView)
+
+        // Initialize BCI server after permissions
+        initBCIServer()
+    }
+
+    private fun initBCIServer() {
+        val isConnected = try {
+            SDKManager.getInstance().isRegistered &&
+                    msdkManagerVM.lvProductConnectionState.value?.first == true
+        } catch (e: Exception) {
+            LogUtils.w(tag, "Could not check connection: ${e.message}")
+            false
+        }
+
+        if (!isConnected) {
+            LogUtils.w(tag, "Aircraft not connected, BCI server will start but virtual stick won't work until connected")
+        }
+
+        try {
+            joystickController = JoystickBCIController()
+            joystickController.initialize(this)
+            joystickController.setBCIStatusListener(this)
+            // Initialize BCI server with the controller
+            bciServer = BCIHttpServer(BCI_SERVER_PORT, joystickController)
+            bciServer?.start()
+            LogUtils.d(tag, "BCI HTTP Server started on port $BCI_SERVER_PORT")
+
+            setupBCIButtons()
+
+            val deviceIp: String? = bciServer?.getDeviceIpAddress()
+            val enableBciUri = "http://$deviceIp:$BCI_SERVER_PORT/enable_bci"
+            if (uriTextView == null) {
+                uriTextView = findViewById(R.id.uriTextView) // Add this ID to your layout
+            }
+            uriTextView?.text = "BCI Enable URI: $enableBciUri"
+
+            LogUtils.d(tag, "BCI URI: $enableBciUri")
+
+        } catch (e: java.io.IOException) {
+            uriTextView?.text = "Failed to start BCI server: ${e.message}"
+            e.printStackTrace()
+        } catch (e: Exception) {
+            LogUtils.e(tag, "Failed to start BCI HTTP server", e)
+            uriTextView?.text = "Failed to start BCI server: ${e.message}"
+        }
+    }
+
+    private fun setupBCIButtons() {
+        // Add enable BCI button listener
+        binding.enableBciButton.setOnClickListener {
+            joystickController?.enableBCIControl(null)
+            LogUtils.d(tag, "BCI Control Enabled")
+            showToast("BCI Control Enabled")
+        }
+
+        // Add disable BCI button listener
+        binding.disableBciButton.setOnClickListener {
+            joystickController?.disableBCIControl(null)
+            LogUtils.d(tag, "BCI Control Disabled")
+            showToast("BCI Control Disabled")
+        }
+    }
+
+    override fun onBCIStatusChanged(isReady: Boolean, statusMessage: String) {
+        runOnUiThread {
+            bciStatusTextView.text = statusMessage
+            bciStatusTextView.setBackgroundColor(
+                if (isReady) Color.GREEN else Color.RED
+            )
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -227,6 +318,9 @@ abstract class DJIMainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        bciServer?.stop()
+        joystickController?.disableBCIControl(null)
+        LogUtils.d(tag, "BCI HTTP Server stopped")
         handler.removeCallbacksAndMessages(null)
         disposable.dispose()
     }

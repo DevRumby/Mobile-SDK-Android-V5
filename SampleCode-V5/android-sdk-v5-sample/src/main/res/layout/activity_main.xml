@@ -100,7 +100,24 @@
                 android:text="@string/is_sdk_debug"
                 android:textColor="@color/white"
                 android:textSize="14sp" />
-
+            <TextView
+                android:id="@+id/bciStatusTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="BCI Status: Disconnected"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:padding="12dp"
+                android:gravity="center"
+                android:background="#E0E0E0" />
+            <TextView
+                android:id="@+id/uriTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="BCI URI will appear here"
+                android:textSize="14sp"
+                android:padding="8dp" />
         </LinearLayout>
 
         <ScrollView
@@ -176,6 +193,37 @@
                     android:gravity="center"
                     android:padding="8dp"
                     android:text="@string/testing_tools"
+                    android:textColor="@color/selector_enable_button" />
+                <Button
+                    android:id="@+id/enable_bci_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:elevation="10dp"
+                    android:foreground="?selectableItemBackground"
+                    android:layout_marginLeft="8dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginRight="8dp"
+                    android:background="@color/white"
+                    android:enabled="true"
+                    android:gravity="center"
+                    android:padding="8dp"
+                    android:text="Enable BCI"
+                    android:textColor="@color/selector_enable_button" />
+
+                <Button
+                    android:id="@+id/disable_bci_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:elevation="10dp"
+                    android:foreground="?selectableItemBackground"
+                    android:layout_marginLeft="8dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginRight="8dp"
+                    android:background="@color/white"
+                    android:enabled="true"
+                    android:gravity="center"
+                    android:padding="8dp"
+                    android:text="Disable BCI"
                     android:textColor="@color/selector_enable_button" />
             </LinearLayout>
         </ScrollView>

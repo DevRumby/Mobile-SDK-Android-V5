@@ -76,7 +76,7 @@ Sample分为3部分：
 - 场景化示例：提供对飞机的场景化支持。
 - Sample模块：提供一个飞机Sample App。
 
-详细配置请参考[settings.gradle](SampleCode-V5/android-sdk-v5-as/settings.gradle)。
+详细配置请参考[settings.gradle](settings.gradle)。
 
 场景化示例：
 

@@ -76,7 +76,7 @@ Sample can be divided into three parts:
 - Scenographic Example: Provides scenographic sample support of aircraft.
 - Sample Module: Offer an Airplane Sample App.
 
-For detailed configuration, please refer to [settings.gradle](SampleCode-V5/android-sdk-v5-as/settings.gradle).
+For detailed configuration, please refer to [settings.gradle](settings.gradle).
 
 Scenographic Example：
 
