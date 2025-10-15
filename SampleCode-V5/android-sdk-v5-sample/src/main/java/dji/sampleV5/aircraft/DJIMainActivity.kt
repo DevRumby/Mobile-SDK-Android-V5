@@ -46,8 +46,10 @@ abstract class DJIMainActivity : AppCompatActivity(), JoystickBCIController.BCIS
     private var bciServer: BCIHttpServer? = null
 
     private var uriTextView: TextView? = null
+    private var versionTextView: TextView? = null
 
     private val BCI_SERVER_PORT = 8080
+    private val BCI_APP_VERSION = "v0.0.1"
 
     private lateinit var bciStatusTextView: TextView
     private lateinit var joystickController: JoystickBCIController
@@ -131,27 +133,44 @@ abstract class DJIMainActivity : AppCompatActivity(), JoystickBCIController.BCIS
             joystickController.initialize(this)
             joystickController.setBCIStatusListener(this)
             // Initialize BCI server with the controller
-            bciServer = BCIHttpServer(BCI_SERVER_PORT, joystickController)
+            bciServer = BCIHttpServer(BCI_SERVER_PORT, joystickController, this)
             bciServer?.start()
             LogUtils.d(tag, "BCI HTTP Server started on port $BCI_SERVER_PORT")
 
             setupBCIButtons()
 
             val deviceIp: String? = bciServer?.getDeviceIpAddress()
-            val enableBciUri = "http://$deviceIp:$BCI_SERVER_PORT/enable_bci"
+            val serverUri = "http://$deviceIp:$BCI_SERVER_PORT"
+            
+            // Initialize version text view (gracefully handle if not in layout)
+            try {
+                if (versionTextView == null) {
+                    versionTextView = findViewById(R.id.versionTextView)
+                }
+                versionTextView?.text = "BCI Control App $BCI_APP_VERSION"
+            } catch (e: Exception) {
+                LogUtils.d(tag, "Version TextView not found in layout: ${e.message}")
+            }
+            
+            // Initialize URI text view
             if (uriTextView == null) {
                 uriTextView = findViewById(R.id.uriTextView) // Add this ID to your layout
             }
-            uriTextView?.text = "BCI Enable URI: $enableBciUri"
+            uriTextView?.text = "BCI Server: $serverUri"
 
-            LogUtils.d(tag, "BCI URI: $enableBciUri")
+            LogUtils.d(tag, "BCI Server URI: $serverUri")
+            LogUtils.d(tag, "Available endpoints: /enable_bci, /disable_bci, /takeoff, /land, /fland, /send_control")
 
         } catch (e: java.io.IOException) {
-            uriTextView?.text = "Failed to start BCI server: ${e.message}"
+            val errorMsg = "Failed to start BCI server (IOException): ${e.message}"
+            uriTextView?.text = errorMsg
+            LogUtils.e(tag, errorMsg, e)
             e.printStackTrace()
         } catch (e: Exception) {
-            LogUtils.e(tag, "Failed to start BCI HTTP server", e)
-            uriTextView?.text = "Failed to start BCI server: ${e.message}"
+            val errorMsg = "Failed to start BCI HTTP server: ${e.message}"
+            LogUtils.e(tag, errorMsg, e)
+            uriTextView?.text = errorMsg
+            e.printStackTrace()
         }
     }
 

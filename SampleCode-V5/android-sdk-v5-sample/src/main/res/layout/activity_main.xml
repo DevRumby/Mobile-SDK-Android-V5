@@ -111,6 +111,16 @@
                 android:gravity="center"
                 android:background="#E0E0E0" />
             <TextView
+                android:id="@+id/versionTextView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="BCI Control App v0.0.1"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:padding="8dp" />
+            <TextView
                 android:id="@+id/uriTextView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

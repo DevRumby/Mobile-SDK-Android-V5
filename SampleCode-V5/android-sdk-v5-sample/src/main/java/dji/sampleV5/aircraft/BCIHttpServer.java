@@ -1,6 +1,9 @@
 package dji.sampleV5.aircraft;
 
 
+import android.content.Context;
+import android.widget.Toast;
+
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -14,15 +17,24 @@ public class BCIHttpServer extends NanoHTTPD {
 
     private final JoystickBCIController controller;
 
-    public BCIHttpServer(int port, JoystickBCIController controller) {
+    private Context context;
+
+
+    public BCIHttpServer(int port, JoystickBCIController controller, Context context) {
         super(port);
         this.controller = controller;
+        this.context = context;
     }
 
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
         Method method = session.getMethod();
+        if (!"/".equals(uri) && !isAuthenticated(session)) {
+            Response response = newFixedLengthResponse(Response.Status.UNAUTHORIZED, MIME_PLAINTEXT, "Authentication required");
+            response.addHeader("WWW-Authenticate", "Basic realm=\"BCI Control\"");
+            return response;
+        }
 
         try {
             // Parse body for POST requests or use query parameters for GET
@@ -52,23 +64,122 @@ public class BCIHttpServer extends NanoHTTPD {
                 case "/fland":
                     controller.completeLanding(null);
                     return newFixedLengthResponse("Finish landing");
+                case "/test":
+                    return newFixedLengthResponse("Server is working! Context is " + (context != null ? "initialized" : "null"));
+                case "/debug":
+                    StringBuilder debugInfo = new StringBuilder();
+                    debugInfo.append("=== RC2 Controller Debug Info ===" + System.lineSeparator());
+                    debugInfo.append("Server Status: OK" + System.lineSeparator());
+                    debugInfo.append("Context: ").append(context != null ? "initialized" : "null").append(System.lineSeparator());
+                    debugInfo.append("Controller: ").append(controller != null ? "initialized" : "null").append(System.lineSeparator());
+                    
+                    if (controller != null) {
+                        try {
+                            debugInfo.append("BCI Active: ").append(controller.isBCIControlActive()).append(System.lineSeparator());
+                            debugInfo.append("Virtual Stick Enabled: ").append(controller.isVirtualStickEnabled()).append(System.lineSeparator());
+                            debugInfo.append("Controller Status: ").append(controller.getControllerStatus()).append(System.lineSeparator());
+                        } catch (Exception e) {
+                            debugInfo.append("Controller Error: ").append(e.getMessage()).append(System.lineSeparator());
+                        }
+                    }
+                    
+                    // Add SDK Manager info
+                    try {
+                        debugInfo.append("SDK Registered: ").append(dji.v5.manager.SDKManager.getInstance().isRegistered()).append(System.lineSeparator());
+                    } catch (Exception e) {
+                        debugInfo.append("SDK Check Error: ").append(e.getMessage()).append(System.lineSeparator());
+                    }
+                    
+                    debugInfo.append("Platform: RC2 Controller" + System.lineSeparator());
+                    debugInfo.append("Aircraft: Mini 4 Pro" + System.lineSeparator());
+                    return newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", debugInfo.toString());
+                case "/logs":
+                    // Simple logging endpoint for RC2 debugging
+                    StringBuilder logs = new StringBuilder();
+                    logs.append("=== Recent Log Messages ===" + System.lineSeparator());
+                    try {
+                        if (controller != null) {
+                            // Test if we can call a simple method
+                            boolean bciActive = controller.isBCIControlActive();
+                            logs.append("Controller method call test: SUCCESS (BCI Active: ").append(bciActive).append(")" + System.lineSeparator());
+                        } else {
+                            logs.append("Controller is null" + System.lineSeparator());
+                        }
+                    } catch (Exception e) {
+                        logs.append("Controller method call test: FAILED - ").append(e.getMessage()).append(System.lineSeparator());
+                    }
+                    return newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", logs.toString());
+                case "/send_control_simple":
+                    // Simplified version for testing
+                    return newFixedLengthResponse("Simple control endpoint works: params=" + params.toString());
                 case "/send_control":
-                    // Parse control data from parameters
-                    float roll = Float.parseFloat(Objects.requireNonNull(params.getOrDefault("roll", "0")));
-                    float pitch = Float.parseFloat(Objects.requireNonNull(params.getOrDefault("pitch", "0")));
-                    float yaw = Float.parseFloat(Objects.requireNonNull(params.getOrDefault("yaw", "0")));
-                    float vertical = Float.parseFloat(Objects.requireNonNull(params.getOrDefault("vertical", "0")));
-                    controller.sendBCIControlData(roll, pitch, yaw, vertical);
-                    return newFixedLengthResponse("Control sent");
+                    // Wrap the entire endpoint in a try-catch to prevent empty responses
+                    try {
+                        if (controller == null) {
+                            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Controller is null");
+                        }
+                        
+                        // Parse parameters - this might be where it's failing
+                        String rollStr = params.getOrDefault("roll", "0");
+                        String pitchStr = params.getOrDefault("pitch", "0");
+                        String yawStr = params.getOrDefault("yaw", "0");
+                        String verticalStr = params.getOrDefault("vertical", "0");
+                        
+                        // Test parsing
+                        float roll = Float.parseFloat(rollStr);
+                        float pitch = Float.parseFloat(pitchStr);
+                        float yaw = Float.parseFloat(yawStr);
+                        float vertical = Float.parseFloat(verticalStr);
+                        
+                        // Don't call the actual control method yet - just return success
+                        return newFixedLengthResponse("Parameters parsed successfully: r=" + roll + " p=" + pitch + " y=" + yaw + " v=" + vertical);
+                        
+                    } catch (Throwable t) {
+                        // Catch any throwable to prevent empty responses
+                        return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, 
+                            "Throwable caught: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+                    }
                 default:
                     return newFixedLengthResponse("Unknown endpoint");
             }
         } catch (IOException | ResponseException e) {
+            if (context != null) {
+                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT,
                     "Error processing request: " + e.getMessage());
         } catch (NumberFormatException e) {
+            if (context != null) {
+                Toast.makeText(context, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
             return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT,
                     "Invalid number format in parameters");
+        }
+    }
+
+    private boolean isAuthenticated(IHTTPSession session) {
+        String authHeader = session.getHeaders().get("authorization");
+        if (authHeader == null || !authHeader.startsWith("Basic ")) {
+            return false;
+        }
+
+        try {
+            String encoded = authHeader.substring(6); // Remove "Basic " prefix
+            String decoded = new String(android.util.Base64.decode(encoded, android.util.Base64.DEFAULT));
+            String[] credentials = decoded.split(":", 2);
+
+            if (credentials.length != 2) {
+                return false;
+            }
+
+            String username = credentials[0];
+            String password = credentials[1];
+
+            //Update to be encrypted in a property file
+            return "BCITeam".equals(username) && "DronesRCool".equals(password);
+
+        } catch (Exception e) {
+            return false;
         }
     }
 

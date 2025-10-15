@@ -10,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider;
 
 
 import dji.sampleV5.aircraft.models.BasicAircraftControlVM;
+import dji.sampleV5.aircraft.models.VirtualStickVM;
 import dji.sdk.keyvalue.key.FlightControllerKey;
 import dji.sdk.keyvalue.value.common.EmptyMsg;
 import dji.sdk.keyvalue.value.flightcontroller.FlightControlAuthorityChangeReason;
@@ -25,7 +26,9 @@ import android.widget.Toast;
 
 public class JoystickBCIController {
 
+    private VirtualStickController virtualStickController;
     private BasicAircraftControlVM aircraftControlVM;
+    private VirtualStickVM virtualStickVM;
     private static final String TAG = "JoystickBCI";
     private static final float MAX_VELOCITY = 15.0f; // m/s
     private static final float MAX_YAW_ANGULAR_VELOCITY = 30.0f; // degrees/s
@@ -37,8 +40,19 @@ public class JoystickBCIController {
 
     public void initialize(FragmentActivity activity) {
         this.context = activity.getApplicationContext();
-        aircraftControlVM = new ViewModelProvider(activity).get(BasicAircraftControlVM.class);
+        Log.d(TAG, "Initializing JoystickBCIController for RC2/Mini4Pro");
+        try {
+            aircraftControlVM = new ViewModelProvider(activity).get(BasicAircraftControlVM.class);
+            virtualStickVM = new ViewModelProvider(activity).get(VirtualStickVM.class);
+            virtualStickController = new VirtualStickController(virtualStickVM);
+            setupVirtualStickMode();
+            Log.d(TAG, "JoystickBCIController initialization completed successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Error during JoystickBCIController initialization: " + e.getMessage(), e);
+            throw e;
+        }
     }
+    
     private void setupVirtualStickMode() {
         VirtualStickManager.getInstance().setVirtualStickStateListener(new VirtualStickStateListener() {
             @Override
@@ -198,23 +212,53 @@ public class JoystickBCIController {
 
     public void sendBCIControlData(float rollVelocity, float pitchVelocity,
                                    float yawAngularVelocity, float verticalVelocity) {
+        Log.d(TAG, "sendBCIControlData called with values: roll=" + rollVelocity + " pitch=" + pitchVelocity + " yaw=" + yawAngularVelocity + " vertical=" + verticalVelocity);
+        
+        // Check control state
+        Log.d(TAG, "Control state - virtualStick:" + isVirtualStickEnabled + " bciActive:" + isBCIControlActive);
         if (!isVirtualStickEnabled || !isBCIControlActive) {
             Log.w(TAG, "BCI control not active");
+            Toast.makeText(context, "BCI control not active", Toast.LENGTH_SHORT).show();
             return;
         }
 
+        // Check virtualStickController
+        Log.d(TAG, "VirtualStickController null check: " + (virtualStickController == null));
+        if (virtualStickController == null) {
+            Log.e(TAG, "VirtualStickController is null!");
+            Toast.makeText(context, "VirtualStickController is null!", Toast.LENGTH_SHORT).show();
+            throw new RuntimeException("VirtualStickController not initialized");
+        }
+
+        Log.d(TAG, "Calculating scaled values...");
         double scaledRoll = clamp(rollVelocity * MAX_VELOCITY, -MAX_VELOCITY, MAX_VELOCITY);
         double scaledPitch = clamp(pitchVelocity * MAX_VELOCITY, -MAX_VELOCITY, MAX_VELOCITY);
         double scaledYaw = clamp(yawAngularVelocity * MAX_YAW_ANGULAR_VELOCITY, -MAX_YAW_ANGULAR_VELOCITY, MAX_YAW_ANGULAR_VELOCITY);
         double scaledVertical = clamp(verticalVelocity * MAX_VERTICAL_VELOCITY, -MAX_VERTICAL_VELOCITY, MAX_VERTICAL_VELOCITY);
 
-        VirtualStickFlightControlParam controlParam = new VirtualStickFlightControlParam();
+        Log.d(TAG, "Scaled values: roll=" + scaledRoll + " pitch=" + scaledPitch + " yaw=" + scaledYaw + " vertical=" + scaledVertical);
+        
+        Toast.makeText(context, "Sending control data...", Toast.LENGTH_SHORT).show();
+
+        try {
+            Log.d(TAG, "Calling virtualStickController.sendControl...");
+            virtualStickController.sendControl(scaledYaw, scaledRoll, scaledPitch, scaledVertical);
+            Log.d(TAG, "virtualStickController.sendControl completed successfully");
+            Toast.makeText(context, "Control sent successfully!", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error in virtualStickController.sendControl: " + e.getMessage(), e);
+            Toast.makeText(context, "Control send error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            throw e;
+        }
+/*
+            VirtualStickFlightControlParam controlParam = new VirtualStickFlightControlParam();
         controlParam.setRoll(scaledRoll);
         controlParam.setPitch(scaledPitch);
         controlParam.setYaw(scaledYaw);
         controlParam.setVerticalThrottle(scaledVertical);
-
+        VirtualStickManager.getInstance().setVirtualStickAdvancedModeEnabled(true);
         VirtualStickManager.getInstance().sendVirtualStickAdvancedParam(controlParam);
+    */
     }
 
     private float clamp(float value, float min, float max) {
@@ -233,6 +277,10 @@ public class JoystickBCIController {
 
     public boolean isBCIControlActive() {
         return isBCIControlActive;
+    }
+
+    public boolean isVirtualStickEnabled() {
+        return isVirtualStickEnabled;
     }
 
     public String getControllerStatus() {
