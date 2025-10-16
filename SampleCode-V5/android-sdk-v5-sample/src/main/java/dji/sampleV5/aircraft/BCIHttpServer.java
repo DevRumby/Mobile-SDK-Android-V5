@@ -93,6 +93,21 @@ public class BCIHttpServer extends NanoHTTPD {
                     debugInfo.append("Platform: RC2 Controller" + System.lineSeparator());
                     debugInfo.append("Aircraft: Mini 4 Pro" + System.lineSeparator());
                     return newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", debugInfo.toString());
+                case "/camera_debug":
+                    // Camera debug logging endpoint - accessible without ADB
+                    try {
+                        String cameraDebugInfo = CameraDebug.getCameraDebugInfo();
+                        
+                        // Check for clear parameter
+                        if ("true".equals(params.get("clear"))) {
+                            cameraDebugInfo += System.lineSeparator() + CameraDebug.clearCameraDebugLogs() + System.lineSeparator();
+                        }
+                        
+                        return newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", cameraDebugInfo);
+                    } catch (Exception e) {
+                        return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain; charset=utf-8", 
+                            "Error generating camera debug info: " + e.getMessage());
+                    }
                 case "/logs":
                     // Simple logging endpoint for RC2 debugging
                     StringBuilder logs = new StringBuilder();
@@ -130,6 +145,7 @@ public class BCIHttpServer extends NanoHTTPD {
                         float pitch = Float.parseFloat(pitchStr);
                         float yaw = Float.parseFloat(yawStr);
                         float vertical = Float.parseFloat(verticalStr);
+                        controller.sendBCIControlData(roll, pitch, yaw, vertical);
                         
                         // Don't call the actual control method yet - just return success
                         return newFixedLengthResponse("Parameters parsed successfully: r=" + roll + " p=" + pitch + " y=" + yaw + " v=" + vertical);

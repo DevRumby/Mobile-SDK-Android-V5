@@ -1,5 +1,6 @@
 package dji.sampleV5.aircraft
 
+import dji.sampleV5.aircraft.util.ToastUtils.showToast
 import dji.v5.common.utils.GeoidManager
 import dji.v5.ux.core.communication.DefaultGlobalPreferences
 import dji.v5.ux.core.communication.GlobalPreferencesManager
@@ -24,6 +25,8 @@ class DJIAircraftMainActivity : DJIMainActivity() {
 
         enableDefaultLayout(DefaultLayoutActivity::class.java)
         enableWidgetList(WidgetsActivity::class.java)
+        
+        showToast("UXSDK features enabled - Default Layout and Widget List available")
     }
 
     override fun prepareTestingToolsActivity() {

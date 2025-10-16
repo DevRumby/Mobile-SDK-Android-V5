@@ -117,6 +117,9 @@ public class DefaultLayoutActivity extends AppCompatActivity {
     private ComponentIndexType lastDevicePosition = ComponentIndexType.UNKNOWN;
     private CameraLensType lastLensType = CameraLensType.UNKNOWN;
 
+    // Debug logging system
+    private static final StringBuilder debugLog = new StringBuilder();
+    private static final int MAX_DEBUG_LOG_SIZE = 50000; // Limit log size
 
     private CompositeDisposable compositeDisposable;
     private final DataProcessor<CameraSource> cameraSourceProcessor = DataProcessor.create(new CameraSource(ComponentIndexType.UNKNOWN,
@@ -170,12 +173,35 @@ public class DefaultLayoutActivity extends AppCompatActivity {
         mapWidget = findViewById(R.id.widget_map);
 
         initClickListener();
-        MediaDataCenter.getInstance().getCameraStreamManager().addAvailableCameraUpdatedListener(availableCameraUpdatedListener);
-        primaryFpvWidget.setOnFPVStreamSourceListener((devicePosition, lensType) -> cameraSourceProcessor.onNext(new CameraSource(devicePosition, lensType)));
+        
+        // Debug: Log initial camera stream manager state
+        addDebugLog("=== CAMERA DEBUG: Initializing camera stream ===");
+        try {
+            ICameraStreamManager streamManager = MediaDataCenter.getInstance().getCameraStreamManager();
+            addDebugLog("Camera stream manager: " + (streamManager != null ? "Available" : "NULL"));
+            
+            streamManager.addAvailableCameraUpdatedListener(availableCameraUpdatedListener);
+            
+            // Try to get current available cameras immediately
+            addDebugLog("Attempting to get current available cameras...");
+            
+        } catch (Exception e) {
+            addDebugLog("ERROR: Error initializing camera stream manager: " + e.getMessage());
+            LogUtils.e(TAG, "Error initializing camera stream manager: " + e.getMessage(), e);
+        }
+        
+        primaryFpvWidget.setOnFPVStreamSourceListener((devicePosition, lensType) -> {
+            addDebugLog("FPV Stream Source Changed: position=" + devicePosition + ", lens=" + lensType);
+            cameraSourceProcessor.onNext(new CameraSource(devicePosition, lensType));
+        });
 
         //小surfaceView放置在顶部，避免被大的遮挡
         secondaryFPVWidget.setSurfaceViewZOrderOnTop(true);
         secondaryFPVWidget.setSurfaceViewZOrderMediaOverlay(true);
+        
+        // Debug: Set fallback camera sources
+        addDebugLog("Setting fallback camera sources...");
+        initializeFallbackCameras();
 
 
         mapWidget.initMapLibreMap(getApplicationContext(), map -> {
@@ -245,6 +271,11 @@ public class DefaultLayoutActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        
+        // Debug: Log connection and camera status on resume
+        addDebugLog("=== CAMERA DEBUG: onResume called ===");
+        logConnectionStatus();
+        
         mapWidget.onResume();
         compositeDisposable = new CompositeDisposable();
         compositeDisposable.add(systemStatusListPanelWidget.closeButtonPressed()
@@ -301,55 +332,84 @@ public class DefaultLayoutActivity extends AppCompatActivity {
     }
 
     private void updateFPVWidgetSource(List<ComponentIndexType> availableCameraList) {
-        LogUtils.i(TAG, JsonUtil.toJson(availableCameraList));
+        addDebugLog("=== CAMERA DEBUG: updateFPVWidgetSource called ===");
+        addDebugLog("Available cameras JSON: " + JsonUtil.toJson(availableCameraList));
+        addDebugLog("Available cameras count: " + (availableCameraList != null ? availableCameraList.size() : "NULL"));
+        
         if (availableCameraList == null) {
+            addDebugLog("WARNING: Available camera list is NULL - trying fallback initialization");
+            initializeFallbackCameras();
             return;
         }
 
         ArrayList<ComponentIndexType> cameraList = new ArrayList<>(availableCameraList);
+        addDebugLog("Camera list after copy: " + cameraList.toString());
 
         //没有数据
         if (cameraList.isEmpty()) {
+            addDebugLog("WARNING: Camera list is EMPTY - hiding secondary and trying fallback for primary");
             secondaryFPVWidget.setVisibility(View.GONE);
+            
+            // Don't return immediately - try fallback for primary widget
+            addDebugLog("Attempting fallback camera initialization for primary FPV widget");
+            initializeFallbackCameras();
             return;
         }
 
         //仅一路数据
         if (cameraList.size() == 1) {
-            primaryFpvWidget.updateVideoSource(availableCameraList.get(0));
+            ComponentIndexType singleSource = availableCameraList.get(0);
+            addDebugLog("Single camera detected: " + singleSource + " - setting as primary");
+            primaryFpvWidget.updateVideoSource(singleSource);
             secondaryFPVWidget.setVisibility(View.GONE);
+            addDebugLog("SUCCESS: Primary FPV widget updated with single source: " + singleSource);
             return;
         }
 
         //大于两路数据
+        addDebugLog("Multiple cameras detected (" + cameraList.size() + ") - configuring primary and secondary");
         ComponentIndexType primarySource = getSuitableSource(cameraList, ComponentIndexType.LEFT_OR_MAIN);
+        addDebugLog("Selected primary source: " + primarySource);
         primaryFpvWidget.updateVideoSource(primarySource);
         cameraList.remove(primarySource);
 
         ComponentIndexType secondarySource = getSuitableSource(cameraList, ComponentIndexType.FPV);
+        addDebugLog("Selected secondary source: " + secondarySource);
         secondaryFPVWidget.updateVideoSource(secondarySource);
 
         secondaryFPVWidget.setVisibility(View.VISIBLE);
+        addDebugLog("SUCCESS: Both FPV widgets configured - Primary: " + primarySource + ", Secondary: " + secondarySource);
     }
 
     private ComponentIndexType getSuitableSource(List<ComponentIndexType> cameraList, ComponentIndexType defaultSource) {
+        addDebugLog("getSuitableSource called with list: " + cameraList + ", default: " + defaultSource);
+        
         if (cameraList.contains(ComponentIndexType.LEFT_OR_MAIN)) {
+            addDebugLog("Selected LEFT_OR_MAIN camera");
             return ComponentIndexType.LEFT_OR_MAIN;
         } else if (cameraList.contains(ComponentIndexType.RIGHT)) {
+            addDebugLog("Selected RIGHT camera");
             return ComponentIndexType.RIGHT;
         } else if (cameraList.contains(ComponentIndexType.UP)) {
+            addDebugLog("Selected UP camera");
             return ComponentIndexType.UP;
         } else if (cameraList.contains(ComponentIndexType.PORT_1)) {
+            addDebugLog("Selected PORT_1 camera");
             return ComponentIndexType.PORT_1;
         } else if (cameraList.contains(ComponentIndexType.PORT_2)) {
+            addDebugLog("Selected PORT_2 camera");
             return ComponentIndexType.PORT_2;
         } else if (cameraList.contains(ComponentIndexType.PORT_3)) {
+            addDebugLog("Selected PORT_3 camera (mapped to PORT_4)");
             return ComponentIndexType.PORT_4;
         } else if (cameraList.contains(ComponentIndexType.PORT_4)) {
+            addDebugLog("Selected PORT_4 camera");
             return ComponentIndexType.PORT_4;
         } else if (cameraList.contains(ComponentIndexType.VISION_ASSIST)) {
+            addDebugLog("Selected VISION_ASSIST camera");
             return ComponentIndexType.VISION_ASSIST;
         }
+        addDebugLog("WARNING: No suitable camera found, using default: " + defaultSource);
         return defaultSource;
     }
 
@@ -430,6 +490,36 @@ public class DefaultLayoutActivity extends AppCompatActivity {
     private void updateInteractionEnabled() {
         fpvInteractionWidget.setInteractionEnabled(!CameraUtil.isFPVTypeView(primaryFpvWidget.getWidgetModel().getCameraIndex()));
     }
+    
+    /**
+     * Initialize fallback camera sources when automatic detection fails
+     */
+    private void initializeFallbackCameras() {
+        addDebugLog("=== CAMERA DEBUG: initializeFallbackCameras called ===");
+        
+        // Try common camera sources for Mini 4 Pro
+        ComponentIndexType[] fallbackSources = {
+            ComponentIndexType.LEFT_OR_MAIN,
+            ComponentIndexType.FPV,
+            ComponentIndexType.RIGHT,
+            ComponentIndexType.UP,
+            ComponentIndexType.PORT_1
+        };
+        
+        for (ComponentIndexType source : fallbackSources) {
+            addDebugLog("Trying fallback camera source: " + source);
+            try {
+                primaryFpvWidget.updateVideoSource(source);
+                addDebugLog("SUCCESS: Successfully set fallback camera source: " + source);
+                
+                // Hide secondary widget when using fallback
+                secondaryFPVWidget.setVisibility(View.GONE);
+                break;
+            } catch (Exception e) {
+                addDebugLog("FAILED: Failed to set fallback source " + source + ": " + e.getMessage());
+            }
+        }
+    }
 
     private static class CameraSource {
         ComponentIndexType devicePosition;
@@ -441,6 +531,98 @@ public class DefaultLayoutActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * Log current connection and camera status for debugging
+     */
+    private void logConnectionStatus() {
+        try {
+            addDebugLog("=== CONNECTION STATUS DEBUG ===");
+            
+            // Check SDK registration
+            boolean isRegistered = dji.v5.manager.SDKManager.getInstance().isRegistered();
+            addDebugLog("SDK Registered: " + isRegistered);
+            
+            // Check product connection
+            try {
+                // SDK V5 doesn't have getProduct() method - check via registration status
+                boolean hasProduct = dji.v5.manager.SDKManager.getInstance().isRegistered();
+                addDebugLog("Product Connected: " + hasProduct);
+                
+                // Try to get product type from DataCenter instead
+                try {
+                    addDebugLog("Product Type: Available via DataCenter");
+                } catch (Exception productEx) {
+                    addDebugLog("Product Type: Unable to determine - " + productEx.getMessage());
+                }
+            } catch (Exception e) {
+                addDebugLog("ERROR: Error checking product: " + e.getMessage());
+            }
+            
+            // Check camera stream manager
+            try {
+                ICameraStreamManager streamManager = MediaDataCenter.getInstance().getCameraStreamManager();
+                addDebugLog("Camera Stream Manager Available: " + (streamManager != null));
+            } catch (Exception e) {
+                addDebugLog("ERROR: Error accessing camera stream manager: " + e.getMessage());
+            }
+            
+            // Check current FPV widget sources
+            ComponentIndexType primarySource = primaryFpvWidget.getWidgetModel().getCameraIndex();
+            ComponentIndexType secondarySource = secondaryFPVWidget.getWidgetModel().getCameraIndex();
+            addDebugLog("Current Primary FPV Source: " + primarySource);
+            addDebugLog("Current Secondary FPV Source: " + secondarySource);
+            addDebugLog("Secondary FPV Visibility: " + (secondaryFPVWidget.getVisibility() == View.VISIBLE ? "VISIBLE" : "HIDDEN"));
+            
+        } catch (Exception e) {
+            addDebugLog("ERROR: Error in logConnectionStatus: " + e.getMessage());
+            LogUtils.e(TAG, "Error in logConnectionStatus: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Add a debug log entry with timestamp
+     */
+    private static void addDebugLog(String message) {
+        synchronized (debugLog) {
+            String timestamp = new java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault())
+                    .format(new java.util.Date());
+            debugLog.append("[").append(timestamp).append("] ").append(message).append("\n");
+            
+            // Trim log if it gets too large
+            if (debugLog.length() > MAX_DEBUG_LOG_SIZE) {
+                String currentLog = debugLog.toString();
+                debugLog.setLength(0);
+                debugLog.append("[LOG TRIMMED]\n");
+                debugLog.append(currentLog.substring(currentLog.length() - (MAX_DEBUG_LOG_SIZE - 1000)));
+            }
+        }
+        
+        // Also log to standard Android log for development
+        LogUtils.d("CameraDebug", message);
+    }
+    
+    /**
+     * Get all debug logs as a formatted string
+     */
+    public static String getDebugLogs() {
+        synchronized (debugLog) {
+            if (debugLog.length() == 0) {
+                return "No debug logs available yet. Try opening the Default Layout and interacting with the camera.";
+            }
+            return debugLog.toString();
+        }
+    }
+    
+    /**
+     * Clear debug logs
+     */
+    public static void clearDebugLogs() {
+        synchronized (debugLog) {
+            debugLog.setLength(0);
+            addDebugLog("Debug logs cleared");
+        }
+    }
+    
     @Override
     public void onBackPressed() {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.END)) {

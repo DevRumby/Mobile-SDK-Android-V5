@@ -2,6 +2,8 @@ package dji.sampleV5.aircraft.virtualstick;
 
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -22,11 +24,11 @@ import dji.v5.manager.SDKManager;
 import dji.v5.manager.aircraft.virtualstick.VirtualStickManager;
 import dji.v5.manager.aircraft.virtualstick.VirtualStickState;
 import dji.v5.manager.aircraft.virtualstick.VirtualStickStateListener;
+import dji.v5.manager.aircraft.virtualstick.Stick;
 import android.widget.Toast;
 
 public class JoystickBCIController {
 
-    private VirtualStickController virtualStickController;
     private BasicAircraftControlVM aircraftControlVM;
     private VirtualStickVM virtualStickVM;
     private static final String TAG = "JoystickBCI";
@@ -37,14 +39,15 @@ public class JoystickBCIController {
     private boolean isVirtualStickEnabled = false;
     private boolean isBCIControlActive = false;
     private Context context;
+    private Handler mainHandler; // Add Handler for UI thread operations
 
     public void initialize(FragmentActivity activity) {
         this.context = activity.getApplicationContext();
+        this.mainHandler = new Handler(Looper.getMainLooper()); // Initialize Handler
         Log.d(TAG, "Initializing JoystickBCIController for RC2/Mini4Pro");
         try {
             aircraftControlVM = new ViewModelProvider(activity).get(BasicAircraftControlVM.class);
             virtualStickVM = new ViewModelProvider(activity).get(VirtualStickVM.class);
-            virtualStickController = new VirtualStickController(virtualStickVM);
             setupVirtualStickMode();
             Log.d(TAG, "JoystickBCIController initialization completed successfully");
         } catch (Exception e) {
@@ -218,36 +221,42 @@ public class JoystickBCIController {
         Log.d(TAG, "Control state - virtualStick:" + isVirtualStickEnabled + " bciActive:" + isBCIControlActive);
         if (!isVirtualStickEnabled || !isBCIControlActive) {
             Log.w(TAG, "BCI control not active");
-            Toast.makeText(context, "BCI control not active", Toast.LENGTH_SHORT).show();
+            showToast("BCI control not active");
             return;
         }
 
-        // Check virtualStickController
-        Log.d(TAG, "VirtualStickController null check: " + (virtualStickController == null));
-        if (virtualStickController == null) {
-            Log.e(TAG, "VirtualStickController is null!");
-            Toast.makeText(context, "VirtualStickController is null!", Toast.LENGTH_SHORT).show();
-            throw new RuntimeException("VirtualStickController not initialized");
+        // Check virtualStickVM
+        Log.d(TAG, "VirtualStickVM null check: " + (virtualStickVM == null));
+        if (virtualStickVM == null) {
+            Log.e(TAG, "VirtualStickVM is null!");
+            showToast("VirtualStickVM is null!");
+            throw new RuntimeException("VirtualStickVM not initialized");
         }
 
-        Log.d(TAG, "Calculating scaled values...");
-        double scaledRoll = clamp(rollVelocity * MAX_VELOCITY, -MAX_VELOCITY, MAX_VELOCITY);
-        double scaledPitch = clamp(pitchVelocity * MAX_VELOCITY, -MAX_VELOCITY, MAX_VELOCITY);
-        double scaledYaw = clamp(yawAngularVelocity * MAX_YAW_ANGULAR_VELOCITY, -MAX_YAW_ANGULAR_VELOCITY, MAX_YAW_ANGULAR_VELOCITY);
-        double scaledVertical = clamp(verticalVelocity * MAX_VERTICAL_VELOCITY, -MAX_VERTICAL_VELOCITY, MAX_VERTICAL_VELOCITY);
-
-        Log.d(TAG, "Scaled values: roll=" + scaledRoll + " pitch=" + scaledPitch + " yaw=" + scaledYaw + " vertical=" + scaledVertical);
+        Log.d(TAG, "Converting to stick positions...");
+        // Convert normalized values (-1.0 to 1.0) to stick position values
+        // Left stick: horizontal = yaw, vertical = throttle (vertical velocity)
+        int leftHorizontal = (int) (clamp(yawAngularVelocity, -1.0f, 1.0f) * Stick.MAX_STICK_POSITION_ABS);
+        int leftVertical = (int) (clamp(verticalVelocity, -1.0f, 1.0f) * Stick.MAX_STICK_POSITION_ABS);
         
-        Toast.makeText(context, "Sending control data...", Toast.LENGTH_SHORT).show();
+        // Right stick: horizontal = roll, vertical = pitch
+        int rightHorizontal = (int) (clamp(rollVelocity, -1.0f, 1.0f) * Stick.MAX_STICK_POSITION_ABS);
+        int rightVertical = (int) (clamp(-pitchVelocity, -1.0f, 1.0f) * Stick.MAX_STICK_POSITION_ABS); // Invert pitch
+
+        Log.d(TAG, "Stick positions: leftH=" + leftHorizontal + " leftV=" + leftVertical + 
+              " rightH=" + rightHorizontal + " rightV=" + rightVertical);
+        
+        showToast("Sending stick positions...");
 
         try {
-            Log.d(TAG, "Calling virtualStickController.sendControl...");
-            virtualStickController.sendControl(scaledYaw, scaledRoll, scaledPitch, scaledVertical);
-            Log.d(TAG, "virtualStickController.sendControl completed successfully");
-            Toast.makeText(context, "Control sent successfully!", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Calling virtualStickVM.setLeftPosition and setRightPosition...");
+            virtualStickVM.setLeftPosition(leftHorizontal, leftVertical);
+            virtualStickVM.setRightPosition(rightHorizontal, rightVertical);
+            Log.d(TAG, "Stick positions set successfully");
+            showToast("Control sent successfully!");
         } catch (Exception e) {
-            Log.e(TAG, "Error in virtualStickController.sendControl: " + e.getMessage(), e);
-            Toast.makeText(context, "Control send error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Log.e(TAG, "Error setting stick positions: " + e.getMessage(), e);
+            showToast("Control send error: " + e.getMessage());
             throw e;
         }
 /*
@@ -291,5 +300,10 @@ public class JoystickBCIController {
         } else {
             return "BCI Control Active";
         }
+    }
+
+    private void showToast(String message) {
+        // Use Handler to post Toast messages to the UI thread
+        mainHandler.post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
     }
 }
